@@ -1,0 +1,42 @@
+package io.plainround.seatwave.gateway.booking;
+
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.NotNull;
+import java.time.Duration;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
+
+/**
+ * The booking service's settings, bound from {@code seatwave.booking.*} and checked at start-up.
+ *
+ * @param holdDuration how long a hold lasts; Module 1's hold is 300 seconds
+ * @param readDelay a fault the slow-backend lab injects into the two list reads ({@code GET
+ *     /v1/holds} and {@code GET /v1/bookings}); zero, the default, injects nothing
+ */
+@Validated
+@ConfigurationProperties("seatwave.booking")
+public record BookingProperties(@NotNull Duration holdDuration, @NotNull Duration readDelay) {
+
+  // Longer than any client timeout in this repository; a longer fault would test nothing new.
+  private static final Duration MAX_DELAY = Duration.ofSeconds(30);
+
+  /**
+   * A hold must last some time; a missing value has its own problem line.
+   *
+   * @return true when the duration is positive or missing
+   */
+  @AssertTrue(message = "holdDuration must be positive")
+  public boolean isHoldDurationPositive() {
+    return holdDuration == null || holdDuration.isPositive();
+  }
+
+  /**
+   * The injected delay must be from 0 to 30 s.
+   *
+   * @return true when the delay is inside that range or missing
+   */
+  @AssertTrue(message = "readDelay must be from 0 to 30s")
+  public boolean isReadDelayInRange() {
+    return readDelay == null || (!readDelay.isNegative() && readDelay.compareTo(MAX_DELAY) <= 0);
+  }
+}

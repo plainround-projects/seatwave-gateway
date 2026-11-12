@@ -1,0 +1,71 @@
+# SeatWave's edge gateway. Routes are configuration, reviewed like code: a route change is a diff
+# of this file. Compose sets the four SEATWAVE_* addresses; every other value is here.
+server:
+  port: 8080
+  # Let requests in flight finish on SIGTERM; Module 10's balancer drains the gateway first.
+  shutdown: graceful
+spring:
+  application:
+    name: gateway
+  threads:
+    virtual:
+      # One virtual thread per request: a request waiting on a service holds no platform thread.
+      enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  http:
+    clients:
+      # Every proxied call is bounded (guideline 64). 100 ms to connect inside one network; 2 s for
+      # an answer, above Module 7's 1,750 ms confirm budget.
+      connect-timeout: 100ms
+      read-timeout: 2s
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            # Catalog reads, version 1. GET only: the catalog has no write endpoint to expose.
+            - id: catalog-v1
+              uri: ${SEATWAVE_CATALOG_URI:http://catalog:8080}
+              predicates:
+                - Path=/v1/events,/v1/events/**
+                - Method=GET
+            # Holds and bookings, version 1. The token check happens before any route
+            # (SecurityConfiguration), so this route never sees a request without a valid token.
+            - id: booking-v1
+              uri: ${SEATWAVE_BOOKING_URI:http://booking:8080}
+              predicates:
+                - Path=/v1/holds,/v1/holds/**,/v1/bookings,/v1/bookings/**
+                - Method=GET,POST,DELETE
+            # The mobile backend-for-frontend, owned by the mobile team. The public path carries
+            # the client type; the BFF itself serves /v1/..., so the first segment is cut.
+            - id: mobile-bff-v1
+              uri: ${SEATWAVE_MOBILE_BFF_URI:http://mobile-bff:8080}
+              predicates:
+                - Path=/mobile/v1/**
+                - Method=GET
+              filters:
+                - StripPrefix=1
+seatwave:
+  gateway:
+    # The issuer stand-in of the lab; Module 38 replaces it with the real login service.
+    issuer: http://issuer:8080
+    audience: seatwave-api
+    jwk-set-uri: ${SEATWAVE_JWK_SET_URI:http://issuer:8080/.well-known/jwks.json}
+    # Two clocks never agree exactly; 30 s of allowance, and never more than 60 s.
+    clock-skew: 30s
+    key-set-connect-timeout: 200ms
+    key-set-read-timeout: 500ms
+management:
+  server:
+    # Health and metrics on their own port, never on the public one.
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+  metrics:
+    distribution:
+      # Histograms, so p50 and p99 of every route can be read (guideline 68).
+      percentiles-histogram:
+        http.server.requests: true

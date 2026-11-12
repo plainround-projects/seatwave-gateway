@@ -1,0 +1,24 @@
+# The booking stand-in. The slow-backend lab sets SEATWAVE_BOOKING_READ_DELAY in Compose.
+server:
+  port: 8080
+  shutdown: graceful
+spring:
+  application:
+    name: booking
+  threads:
+    virtual:
+      enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  mvc:
+    problemdetails:
+      enabled: true
+  jackson:
+    deserialization:
+      # Bind only known fields (Module 7): a hold with an extra "price" is refused, not ignored.
+      fail-on-unknown-properties: true
+seatwave:
+  booking:
+    # Module 1's hold: 300 seconds.
+    hold-duration: 300s
+    read-delay: ${SEATWAVE_BOOKING_READ_DELAY:0s}
